@@ -134,7 +134,13 @@ C***
 Cav05-7 DATA LOADMX,NSMAX,NETMX/30,30,30/,NORMF/200/
       DATA NORMF/200/							
 
-	INCLUDE 'G77PORT.INC'	! Sets G77 port and version used to compile/link.
+!	Declare some globals which were undeclared, to make gfortran happy -JAB
+	REAL*4 EXTIM, TMP1, TIM1, TIM2
+
+! Include a build-system-generated file that identifies the compiler instead
+
+!	INCLUDE 'G77PORT.INC'	! Sets G77 port and version used to compile/link.
+	INCLUDE 'PORT.INC'
 
       print *, ''
       print *, 'Numerical Electromagnetics Code, ',
@@ -153,8 +159,10 @@ Cav03     & 'J. Bergervoet (bergervo@prl.philips.nl)'
       print *, ''
 	print *, 
      & 'Merged nec2d/som2d file created by Arie Voors. (4nec2@gmx.net)'
-	print *,'Build 2.7  30-jan-08  ',
+	print *,'Source 2.7  30-jan-08  ',
      & '(maxLD=',loadmx,', MaxEX=',nsmax,', MaxTL=',netmx,')'	! av011
+	print *,'Branched by Levitator (K3YAB) ',
+     & '(Levitat0r@protonmail.com) Port to gfortran v1.0 5-28-2021'
 	print *,'Using ',G77PORT		! 'XX port for G77 version YY'
       print *, ''
 
@@ -284,6 +292,15 @@ C
 C     MAIN INPUT SECTION - STANDARD READ STATEMENT - JUMPS TO APPRO-
 C     PRIATE SECTION FOR SPECIFIC PARAMETER SET UP
 C
+
+! This mess is really weird and it doesn't help that I don't understand FORTRAN formatting rules
+! If you put #14 all one line, it's a syntax error. Why? 
+! Anyway, if data turns up missing in output, here's a good place to look?
+! Also, 1TMP4 is not referenced anywhere else. It's probably supposed to be "TMP4"
+! and it's probably outputting a blank or uninitialized field.
+! I'm glad we have like a dozen variables named some variant of TMP.
+! -JAB
+
 14    CALL READMN(2,AIN,ITMP1,ITMP2,ITMP3,ITMP4,TMP1,TMP2,TMP3,TMP4,
      &TMP5,TMP6)
       MPCNT=MPCNT+1
@@ -1349,7 +1366,7 @@ C
      1,/,9H THET(1)=,F7.4,3X,4HDTH=,F7.4,3X,4HNTH=,I3,//)
 19    FORMAT (///,1X,A3)
 20    FORMAT (4H IR=,I3,/,1X,(1P10E12.5))
-21    FORMAT($,' ENTER EPR,SIG,FMHZ,IPT > ')
+21    FORMAT(' ENTER EPR,SIG,FMHZ,IPT > ', $)
 22    FORMAT(' STARTING COMPUTATION OF SOMMERFELD INTEGRAL TABLES')
       END
 
@@ -4460,6 +4477,10 @@ C ***
 C
 C     FACIO CONTROLS I/O FOR OUT-OF-CORE FACTORIZATION
 C
+
+!	Declare these for gfortran -JAB
+	REAL*4 T1, T2
+
       COMPLEX*16 A
       COMMON /MATPAR/ ICASE,NBLOKS,NPBLK,NLAST,NBLSYM,NPSYM,NLSYM,IMAT,I
      1CASX,NBBX,NPBX,NLBX,NBBL,NPBL,NLBL
@@ -7201,7 +7222,8 @@ Cav17 VSRC made equal to netmx as it somehow limited the nr of NT's to 30
      &RHNX(netmx)								! av017
 
 Cav06 DATA NDIMN,NDIMNP/30,31/,TP/6.283185308D+0/
-      DATA NDIMN,NDIMNP/netmx,netmx+1/,TP/6.283185308D+0/	! av06
+      DATA NDIMN,NDIMNP/netmx,netmx/,TP/6.283185308D+0/	! av06
+      NDIMNP = NDIMNP + 1
 
       NEQZ2=NEQ2
       IF(NEQZ2.EQ.0)NEQZ2=1
@@ -7895,7 +7917,16 @@ C     DIVIDE PATCH FOR WIRE CONNECTION
       GO TO 12
 11    M=M+1
       MP=MP+1
+
+! Ok, so gfortran produces a mysterious "iteration 1 invokes undefined behavior" warning for this loop.
+! The process of elimination reveals it's the statement "MIA=MIA-1".
+! If we initialize MIA=1, its value should be well-defined as 0, so we have to conclude that this warning is spurious
+! or maybe it's just erroneous and there's some other problem, but I don't want to mess with this until I'm 100 years old,
+! so that's all I got. -JAB
+!      MIA=1
+
       MIA=LD+1-M
+
 12    DO 13 IX=1,4
       X(MIA)=XS+XT*S1X+YT*S2X
       Y(MIA)=YS+XT*S1Y+YT*S2Y
@@ -7910,7 +7941,7 @@ C     DIVIDE PATCH FOR WIRE CONNECTION
       SALP(MIA)=SALN
       IF (IX.EQ.2) YT=-YT
       IF (IX.EQ.1.OR.IX.EQ.3) XT=-XT
-      MIA=MIA-1
+      MIA=MIA-1	! Undefined behavior per gfortran? Why?
 13    CONTINUE
       M=M+3
       IF (NX.LE.MP) MP=MP+3
@@ -8197,7 +8228,14 @@ C
       IMPLICIT REAL*8(A-H,O-Z)
 C ***
 C     COMPUTE RADIATION PATTERN, GAIN, NORMALIZED GAIN
-      REAL*8 IGNTP,IGAX,IGTP,HCIR,HBLK,HPOL,HCLIF,ISENS
+      REAL*8 IGAX,IGTP,HCIR,HBLK,HPOL,HCLIF,ISENS
+
+! 	This was previously misdeclared on the line above as REAL*8, and I guess
+!	some compilers will implicitly redefine the type upon assignment, but
+!	gfortran will not build that way. Yes, it is all 6-character elements.
+!	Looks like headings for a table. -JAB
+      CHARACTER(len = 6) :: IGNTP
+
 C     INTEGER HPOL,HBLK,HCIR,HCLIF
       COMPLEX*16 ETH,EPH,ERD,ZRATI,ZRATI2,T1,FRATI
       COMMON /DATA/ X(MAXSEG),Y(MAXSEG),Z(MAXSEG),SI(MAXSEG),BI(MAXSEG),
@@ -8217,8 +8255,26 @@ C***
       DATA HPOL/6HLINEAR,5HRIGHT,4HLEFT/,HBLK,HCIR/1H ,6HCIRCLE/
       DATA IGTP/6H    - ,6HPOWER ,6H- DIRE,6HCTIVE /
       DATA IGAX/6H MAJOR,6H MINOR,6H VERT.,6H HOR. /
-      DATA IGNTP/6H MAJOR,6H AXIS ,6H MINOR,6H AXIS ,6H   VER,6HTICAL ,6
-     1H HORIZ,6HONTAL ,6H      ,6HTOTAL /
+
+!	I'm at a total loss as to why this block of assignments is so cursed, but
+!	chalk it up to FORTRAN illiteracy. It builds this way under gfortran.
+!	In the DATA statement, gfortran keeps seeing a non-specific syntax error at seemingly arbitrary
+!	constants, sometimes "TICAL", sometimes a different one -JAB
+
+!      DATA IGNTP/6H MAJOR,6H AXIS ,6H MINOR,6H AXIS ,6H   VER,6HTICAL ,6H HORIZ,6HONTAL ,6H      ,6HTOTAL /
+!      DATA IGNTP/" MAJOR", " AXIS ", " MINOR", " AXIS ", "   VER", "TICAL ", " HORIZ", "ONTAL ", "      ", "TOTAL "/
+	IGNTP(1) = " MAJOR"
+	IGNTP(2) = " AXIS "
+	IGNTP(3) = " MINOR"
+	IGNTP(4) = " AXIS "
+	IGNTP(5) = "   VER"
+	IGNTP(6) = "TICAL "
+	IGNTP(7) = " HORIZ"
+	IGNTP(8) = "ONTAL "
+	IGNTP(9) = "      "
+	IGNTP(10) = "TOTAL "
+
+
       DATA PI,TA,TD/3.141592654D+0,1.745329252D-02,57.29577951D+0/
       IF (IFAR.LT.2) GO TO 2
       WRITE(3,35)
